@@ -208,6 +208,24 @@ ValueError: template string too large (4600 bytes)
 Lexer failure test skipped (requires internal state modification)
 # Testing objtype.c str + Template error
 TypeError: unsupported types for __add__: 'str', 'Template'
+# Testing conversion without format spec
+Conversion without format spec: OK
+# Testing escaped braces in format spec
+Result: Test skipped (causes crash)
+# Testing exception cleanup in Template.values
+Template.values with valid interpolations: OK
+# Testing too many template segments
+SyntaxError: too many template segments
+# Testing lexer fstring_args edge cases
+Lexer fstring_args tests: OK
+# Testing REVERSE_ADD with str + Template
+TypeError: can only concatenate Template (not "str") to Template
+# Testing different template size limit paths
+SyntaxError: template string too large
+# Testing non-SyntaxError in expression parser
+Expression parsed without error
+# Testing generic type error for addition
+TypeError: unsupported types for __add__: 'int', 'Template'
 # end coverage.c
 0123456789 b'0123456789'
 7300

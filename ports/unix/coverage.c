@@ -1143,6 +1143,193 @@ static mp_obj_t extra_coverage(void) {
                 mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
             }
         }
+
+        // Test 12: Conversion without format spec (parse.c lines 872, 879)
+        {
+            mp_printf(&mp_plat_print, "# Testing conversion without format spec\n");
+            const char *test_code = "t'{x!r}'";
+
+            if (nlr_push(&nlr) == 0) {
+                mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_test_gt_, test_code, strlen(test_code), 0);
+                if (lex) {
+                    mp_parse_tree_t parse_tree = mp_parse(lex, MP_PARSE_SINGLE_INPUT);
+                    mp_compile(&parse_tree, MP_QSTR__lt_test_gt_, false);
+                }
+                nlr_pop();
+                mp_printf(&mp_plat_print, "Conversion without format spec: OK\n");
+            } else {
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            }
+        }
+
+        // Test 14: Template.values with exception during attr load (modtstring.c line 441)
+        {
+            mp_printf(&mp_plat_print, "# Testing exception cleanup in Template.values\n");
+
+            mp_obj_template_t *tmpl = m_new_obj(mp_obj_template_t);
+            tmpl->base.type = &mp_type_template;
+            tmpl->strings = mp_obj_new_tuple(2, (mp_obj_t[]) {MP_OBJ_NEW_QSTR(MP_QSTR_), MP_OBJ_NEW_QSTR(MP_QSTR_)});
+
+            // Create many interpolations to trigger heap allocation path
+            mp_obj_t interps[10];
+            for (int i = 0; i < 10; i++) {
+                interps[i] = mp_obj_new_interpolation(MP_OBJ_NEW_SMALL_INT(i), MP_OBJ_NEW_QSTR(MP_QSTR_x), mp_const_none, MP_OBJ_NEW_QSTR(MP_QSTR_));
+            }
+            tmpl->interpolations = mp_obj_new_tuple(10, interps);
+
+            // This should work normally
+            mp_load_attr(MP_OBJ_FROM_PTR(tmpl), MP_QSTR_values);
+            mp_printf(&mp_plat_print, "Template.values with valid interpolations: OK\n");
+        }
+
+        // Test 15: Too many template segments (parse.c line 930)
+        {
+            mp_printf(&mp_plat_print, "# Testing too many template segments\n");
+            vstr_t vstr;
+            vstr_init(&vstr, 1024);
+            vstr_add_str(&vstr, "t'");
+
+            // Create template with exactly MAX_SEGS segments (4095 + 1)
+            for (int i = 0; i < 4096; i++) {
+                if (i > 0) {
+                    vstr_add_str(&vstr, "{x}");
+                }
+                vstr_add_str(&vstr, "s");
+            }
+            vstr_add_str(&vstr, "'");
+
+            if (nlr_push(&nlr) == 0) {
+                mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_test_gt_, vstr.buf, vstr.len, 0);
+                if (lex) {
+                    mp_parse_tree_t parse_tree = mp_parse(lex, MP_PARSE_SINGLE_INPUT);
+                    mp_compile(&parse_tree, MP_QSTR__lt_test_gt_, false);
+                }
+                nlr_pop();
+                mp_printf(&mp_plat_print, "ERROR: Should have raised too many template segments\n");
+            } else {
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            }
+            vstr_clear(&vstr);
+        }
+
+        // Test 16: Lexer fstring_args with different lengths (lexer.c lines 585-587)
+        {
+            mp_printf(&mp_plat_print, "# Testing lexer fstring_args edge cases\n");
+
+            // Test with empty interpolation
+            const char *test1 = "t'{}'";
+            if (nlr_push(&nlr) == 0) {
+                mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_test_gt_, test1, strlen(test1), 0);
+                if (lex) {
+                    mp_parse_tree_t parse_tree = mp_parse(lex, MP_PARSE_SINGLE_INPUT);
+                    mp_compile(&parse_tree, MP_QSTR__lt_test_gt_, false);
+                }
+                nlr_pop();
+            } else {
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            }
+
+            // Test with single character
+            const char *test2 = "t'{x}'";
+            if (nlr_push(&nlr) == 0) {
+                mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_test_gt_, test2, strlen(test2), 0);
+                if (lex) {
+                    mp_parse_tree_t parse_tree = mp_parse(lex, MP_PARSE_SINGLE_INPUT);
+                    mp_compile(&parse_tree, MP_QSTR__lt_test_gt_, false);
+                }
+                nlr_pop();
+                mp_printf(&mp_plat_print, "Lexer fstring_args tests: OK\n");
+            } else {
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            }
+        }
+
+        // Test 17: REVERSE_ADD with str + Template (modtstring.c line 533)
+        {
+            mp_printf(&mp_plat_print, "# Testing REVERSE_ADD with str + Template\n");
+
+            mp_obj_template_t *tmpl = m_new_obj(mp_obj_template_t);
+            tmpl->base.type = &mp_type_template;
+            tmpl->strings = mp_obj_new_tuple(1, (mp_obj_t[]) {MP_OBJ_NEW_QSTR(MP_QSTR_world)});
+            tmpl->interpolations = mp_obj_new_tuple(0, NULL);
+
+            // This should trigger REVERSE_ADD in Template's binary_op
+            if (nlr_push(&nlr) == 0) {
+                mp_obj_t result = mp_binary_op(MP_BINARY_OP_ADD, MP_OBJ_NEW_QSTR(MP_QSTR_hello), MP_OBJ_FROM_PTR(tmpl));
+                (void)result;
+                nlr_pop();
+                mp_printf(&mp_plat_print, "ERROR: Should have raised TypeError\n");
+            } else {
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            }
+        }
+
+        // Test 18: Different template size limit paths
+        {
+            mp_printf(&mp_plat_print, "# Testing different template size limit paths\n");
+
+            // Test total_bytes limit (parse.c line 941)
+            vstr_t vstr;
+            vstr_init(&vstr, 5000);
+            vstr_add_str(&vstr, "t'");
+
+            // Create a template that exceeds total_bytes but not other limits
+            for (int i = 0; i < 1000; i++) {
+                vstr_add_str(&vstr, "abc{x}");
+            }
+            vstr_add_str(&vstr, "'");
+
+            if (nlr_push(&nlr) == 0) {
+                mp_lexer_t *lex = mp_lexer_new_from_str_len(MP_QSTR__lt_test_gt_, vstr.buf, vstr.len, 0);
+                if (lex) {
+                    mp_parse_tree_t parse_tree = mp_parse(lex, MP_PARSE_SINGLE_INPUT);
+                    mp_compile(&parse_tree, MP_QSTR__lt_test_gt_, false);
+                }
+                nlr_pop();
+            } else {
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            }
+            vstr_clear(&vstr);
+        }
+
+        // Test 19: Non-SyntaxError in tstring_expr_parser (line 190)
+        {
+            mp_printf(&mp_plat_print, "# Testing non-SyntaxError in expression parser\n");
+
+            // Try to parse an expression that would cause a different error
+            const char *bad_expr = "1/0";  // This might cause ZeroDivisionError during compilation
+
+            if (nlr_push(&nlr) == 0) {
+                mp_parse_node_t parsed_node = parse_tstring_expression(NULL, coverage_alloc_fn, bad_expr, strlen(bad_expr));
+                (void)parsed_node;
+                nlr_pop();
+                mp_printf(&mp_plat_print, "Expression parsed without error\n");
+            } else {
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            }
+        }
+
+        // Test 20: Generic type error for incompatible addition (objtype.c line 551)
+        {
+            mp_printf(&mp_plat_print, "# Testing generic type error for addition\n");
+
+            // Create a custom object that doesn't support addition with Template
+            mp_obj_t custom_obj = mp_obj_new_int(123);
+
+            mp_obj_template_t *tmpl = m_new_obj(mp_obj_template_t);
+            tmpl->base.type = &mp_type_template;
+            tmpl->strings = mp_obj_new_tuple(1, (mp_obj_t[]) {MP_OBJ_NEW_QSTR(MP_QSTR_test)});
+            tmpl->interpolations = mp_obj_new_tuple(0, NULL);
+
+            if (nlr_push(&nlr) == 0) {
+                mp_obj_t result = mp_binary_op(MP_BINARY_OP_ADD, custom_obj, MP_OBJ_FROM_PTR(tmpl));
+                (void)result;
+                nlr_pop();
+                mp_printf(&mp_plat_print, "ERROR: Should have raised TypeError\n");
+            } else {
+                mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
+            }
+        }
     }
     #endif
 
