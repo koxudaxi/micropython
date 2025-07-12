@@ -254,6 +254,12 @@ static mp_obj_t mod_thread_start_new_thread(size_t n_args, const mp_obj_t *args)
     // set the function for thread entry
     th_args->fun = args[0];
 
+    #if defined(__GNUC__)
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    #elif defined(_MSC_VER)
+    _ReadWriteBarrier();
+    #endif
+
     // spawn the thread!
     return mp_obj_new_int_from_uint(mp_thread_create(thread_entry, th_args, &th_args->stack_size));
 }
